@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wiki WC Nav — Wikipedia Navigation Paths</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <div class="glass-panel" style="max-width:1400px;margin:0 auto 1rem;">
+      <div class="panel-content" style="padding:1.25rem 1.5rem;">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;">
+          <div>
+            <h1><span>Wiki WC Nav</span></h1>
+            <p>See how readers navigate between Wikipedia articles — powered by Wikimedia Clickstream data</p>
+          </div>
+          <div style="display:flex;gap:6px;">
+            <button class="tab active" id="tab-paths" onclick="switchTab('paths')">Article Paths</button>
+            <button class="tab" id="tab-bulk" onclick="switchTab('bulk')">Bulk Analysis</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+
+    <!-- ===== ARTICLE PATHS TAB ===== -->
+    <div id="panel-paths">
+
+      <!-- Search panel -->
+      <div class="glass-panel">
+        <div class="panel-header">
+          <span>Find navigation paths</span>
+          <span class="iridescent-dot"></span>
+        </div>
+        <div class="panel-content">
+          <div class="form-row" style="align-items:flex-end;gap:0.75rem;flex-wrap:wrap;">
+            <div class="form-group" style="flex:1;min-width:240px;position:relative;">
+              <label>Wikipedia Article</label>
+              <input type="text" id="article-input" placeholder='e.g. "2026 FIFA World Cup"' autocomplete="off"
+                oninput="onArticleInput()" onkeydown="onArticleKey(event)">
+              <div id="suggest-dropdown" class="suggest-dropdown" style="display:none;"></div>
+            </div>
+            <div class="form-group" style="min-width:100px;flex:0 0 auto;">
+              <label>Language</label>
+              <select id="paths-lang">
+                <option value="en" selected>English (EN)</option>
+                <option value="es">Spanish (ES)</option>
+              </select>
+            </div>
+            <div class="form-group" style="min-width:100px;flex:0 0 auto;" id="paths-month-group">
+              <label>Month (optional)</label>
+              <input type="text" id="paths-month" placeholder="2026-03" style="border-radius:8px;">
+            </div>
+            <button class="btn" id="paths-btn" onclick="explorePaths()" style="align-self:flex-end;">
+              Explore Paths
+            </button>
+          </div>
+          <p style="color:var(--text-muted);font-size:12px;margin-top:0.75rem;">
+            Shows where Wikipedia readers came from before landing on this article, and where they went next.
+            First run downloads the Wikimedia Clickstream file (~500 MB for EN, ~50 MB for ES) — cached after that.
+          </p>
+        </div>
+      </div>
+
+      <!-- Progress -->
+      <div class="glass-panel" id="paths-progress" style="display:none;">
+        <div class="panel-header">
+          <span id="paths-progress-title">Loading…</span>
+          <div class="spinner-small"></div>
+        </div>
+        <div class="panel-content">
+          <div id="paths-log" style="font-family:monospace;font-size:13px;color:var(--text-muted);max-height:180px;overflow-y:auto;"></div>
+        </div>
+      </div>
+
+      <!-- Error -->
+      <div id="paths-error" class="glass-panel" style="display:none;border-color:rgba(255,82,82,0.4);">
+        <div class="panel-content">
+          <p id="paths-error-msg" style="color:var(--gap);"></p>
+        </div>
+      </div>
+
+      <!-- Path results -->
+      <div id="paths-results" style="display:none;">
+
+        <!-- Article header -->
+        <div class="glass-panel">
+          <div class="panel-content" style="padding:1rem 1.5rem;">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;">
+              <div>
+                <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;font-family:'Comfortaa',cursive;">Navigation paths for</div>
+                <div id="result-title" style="font-size:1.4rem;font-family:'Comfortaa',cursive;font-weight:700;margin-top:4px;"></div>
+                <a id="result-link" href="#" target="_blank" style="font-size:12px;color:var(--electric-blue);">View on Wikipedia →</a>
+              </div>
+              <div style="display:flex;gap:1.5rem;">
+                <div class="stat"><div class="stat-value found" id="stat-incoming">—</div><div class="stat-label">Arrivals/mo</div></div>
+                <div class="stat"><div class="stat-value stub" id="stat-outgoing">—</div><div class="stat-label">Departures/mo</div></div>
+                <div class="stat"><div class="stat-value warning-val" id="stat-external">—</div><div class="stat-label">Search arrivals</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Two-column path view -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;" id="paths-grid">
+
+          <!-- Incoming -->
+          <div class="glass-panel" style="margin-bottom:0;">
+            <div class="panel-header">
+              <span>↓ People came from</span>
+              <span class="iridescent-dot"></span>
+            </div>
+            <div class="panel-content" style="padding:0.5rem 0;">
+              <div id="incoming-list"></div>
+            </div>
+          </div>
+
+          <!-- Outgoing -->
+          <div class="glass-panel" style="margin-bottom:0;">
+            <div class="panel-header">
+              <span>→ People went to next</span>
+              <span class="iridescent-dot"></span>
+            </div>
+            <div class="panel-content" style="padding:0.5rem 0;">
+              <div id="outgoing-list"></div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- External arrivals -->
+        <div class="glass-panel" id="external-panel">
+          <div class="panel-header">
+            <span>External arrivals (search, links from outside Wikipedia)</span>
+            <span class="iridescent-dot"></span>
+          </div>
+          <div class="panel-content" style="padding:0.5rem 0;">
+            <div id="external-list"></div>
+          </div>
+        </div>
+
+        <p style="color:var(--text-muted);font-size:11px;text-align:center;margin-top:-0.5rem;">
+          Data: Wikimedia Clickstream <span id="result-month"></span> · Minimum threshold: 10 navigation events · Click any article to explore its paths
+        </p>
+      </div>
+    </div>
+
+
+    <!-- ===== BULK ANALYSIS TAB ===== -->
+    <div id="panel-bulk" style="display:none;">
+      <div class="glass-panel">
+        <div class="panel-header">
+          <span>Bulk FIFA World Cup Analysis</span>
+          <span class="iridescent-dot"></span>
+        </div>
+        <div class="panel-content">
+          <div class="form-row" style="align-items:flex-end;flex-wrap:wrap;gap:1rem;">
+            <div class="form-group" style="min-width:140px;flex:0 0 auto;">
+              <label>Languages</label>
+              <div style="display:flex;gap:0.5rem;margin-top:4px;">
+                <label class="toggle-chip"><input type="checkbox" id="lang-en" checked> EN</label>
+                <label class="toggle-chip"><input type="checkbox" id="lang-es" checked> ES</label>
+              </div>
+            </div>
+            <div class="form-group" style="min-width:120px;flex:0 0 auto;">
+              <label>Mode</label>
+              <select id="mode-select">
+                <option value="fast" selected>Fast (views + quality)</option>
+                <option value="full">Full (+ navigation paths)</option>
+              </select>
+            </div>
+            <div class="form-group" style="min-width:100px;flex:0 0 auto;">
+              <label>Category depth</label>
+              <select id="depth-select">
+                <option value="1" selected>1 — faster</option>
+                <option value="2">2 — deeper</option>
+              </select>
+            </div>
+            <div class="form-group" style="min-width:80px;flex:0 0 auto;">
+              <label>Show top</label>
+              <select id="top-select">
+                <option value="20">20</option>
+                <option value="30" selected>30</option>
+                <option value="50">50</option>
+              </select>
+            </div>
+            <button class="btn" id="run-btn" onclick="runAnalysis()" style="align-self:flex-end;">Analyze</button>
+          </div>
+          <p style="color:var(--text-muted);font-size:12px;margin-top:0.75rem;">
+            Crawls FIFA World Cup Wikipedia categories and ranks articles by traffic × quality gaps.
+          </p>
+        </div>
+      </div>
+
+      <div class="glass-panel" id="bulk-progress" style="display:none;">
+        <div class="panel-header"><span>Running…</span><div class="spinner-small"></div></div>
+        <div class="panel-content">
+          <div id="bulk-log" style="font-family:monospace;font-size:13px;color:var(--text-muted);max-height:200px;overflow-y:auto;"></div>
+        </div>
+      </div>
+
+      <div id="bulk-results" style="display:none;">
+        <div class="glass-panel">
+          <div class="panel-content" style="padding:1rem 1.5rem;">
+            <div id="bulk-stats" style="display:flex;gap:1.5rem;flex-wrap:wrap;align-items:center;"></div>
+          </div>
+        </div>
+        <div class="glass-panel">
+          <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;">
+            <div class="tabs" style="margin:0;border:none;background:none;padding:0;" id="lang-tabs"></div>
+            <button class="btn btn-secondary" onclick="exportCSV()">Export CSV</button>
+          </div>
+          <div class="panel-content" style="padding:0.5rem 0 0;">
+            <div style="overflow-x:auto;">
+              <table class="results-table" id="results-table">
+                <thead id="table-head"></thead>
+                <tbody id="table-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    // ── Tab switching ──────────────────────────────────────────────
+    function switchTab(tab) {
+      document.getElementById('panel-paths').style.display = tab === 'paths' ? 'block' : 'none';
+      document.getElementById('panel-bulk').style.display  = tab === 'bulk'  ? 'block' : 'none';
+      document.getElementById('tab-paths').classList.toggle('active', tab === 'paths');
+      document.getElementById('tab-bulk').classList.toggle('active',  tab === 'bulk');
+    }
+
+    // ── Autocomplete ───────────────────────────────────────────────
+    let suggestTimer = null;
+    let selectedSuggest = -1;
+
+    function onArticleInput() {
+      clearTimeout(suggestTimer);
+      selectedSuggest = -1;
+      const q = document.getElementById('article-input').value.trim();
+      if (q.length < 2) { hideSuggest(); return; }
+      suggestTimer = setTimeout(() => fetchSuggestions(q), 280);
+    }
+
+    async function fetchSuggestions(q) {
+      const lang = document.getElementById('paths-lang').value;
+      try {
+        const res = await fetch(`/api/suggest?q=${encodeURIComponent(q)}&lang=${lang}`);
+        const data = await res.json();
+        renderSuggestions(data.results || []);
+      } catch (e) { hideSuggest(); }
+    }
+
+    function renderSuggestions(items) {
+      const dd = document.getElementById('suggest-dropdown');
+      if (!items.length) { hideSuggest(); return; }
+      dd.innerHTML = items.map((title, i) =>
+        `<div class="suggest-item" data-idx="${i}" onmousedown="selectSuggest('${esc(title)}')">${esc(title)}</div>`
+      ).join('');
+      dd.style.display = 'block';
+    }
+
+    function selectSuggest(title) {
+      document.getElementById('article-input').value = title;
+      hideSuggest();
+    }
+
+    function hideSuggest() {
+      document.getElementById('suggest-dropdown').style.display = 'none';
+    }
+
+    function onArticleKey(e) {
+      const dd = document.getElementById('suggest-dropdown');
+      const items = dd.querySelectorAll('.suggest-item');
+      if (e.key === 'ArrowDown') {
+        selectedSuggest = Math.min(selectedSuggest + 1, items.length - 1);
+        items.forEach((el, i) => el.classList.toggle('active', i === selectedSuggest));
+        e.preventDefault();
+      } else if (e.key === 'ArrowUp') {
+        selectedSuggest = Math.max(selectedSuggest - 1, -1);
+        items.forEach((el, i) => el.classList.toggle('active', i === selectedSuggest));
+        e.preventDefault();
+      } else if (e.key === 'Enter') {
+        if (selectedSuggest >= 0 && items[selectedSuggest]) {
+          selectSuggest(items[selectedSuggest].textContent);
+        } else {
+          hideSuggest();
+          explorePaths();
+        }
+      } else if (e.key === 'Escape') {
+        hideSuggest();
+      }
+    }
+
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('#article-input') && !e.target.closest('#suggest-dropdown')) {
+        hideSuggest();
+      }
+    });
+
+    // ── Article path exploration ───────────────────────────────────
+    let pathsES = null;
+
+    function explorePaths() {
+      const title = document.getElementById('article-input').value.trim();
+      if (!title) { document.getElementById('article-input').focus(); return; }
+
+      hideSuggest();
+      const lang = document.getElementById('paths-lang').value;
+      const month = document.getElementById('paths-month').value.trim();
+
+      document.getElementById('paths-progress').style.display = 'block';
+      document.getElementById('paths-progress-title').textContent = `Finding paths for "${title}"…`;
+      document.getElementById('paths-log').innerHTML = '';
+      document.getElementById('paths-results').style.display = 'none';
+      document.getElementById('paths-error').style.display = 'none';
+      document.getElementById('paths-btn').disabled = true;
+      document.getElementById('paths-btn').textContent = 'Loading…';
+
+      if (pathsES) { pathsES.close(); pathsES = null; }
+
+      const params = new URLSearchParams({ title, lang, cache_dir: '~/.cache/wiki-wc-nav' });
+      if (month) params.set('month', month);
+
+      pathsES = new EventSource(`/api/article-paths?${params}`);
+
+      pathsES.onmessage = (event) => {
+        const d = JSON.parse(event.data);
+        if (d.type === 'progress') {
+          appendPathLog(d.msg);
+        } else if (d.type === 'done') {
+          pathsES.close(); pathsES = null;
+          appendPathLog('Done!');
+          setTimeout(() => renderPaths(d), 300);
+        } else if (d.type === 'error') {
+          pathsES.close(); pathsES = null;
+          document.getElementById('paths-progress').style.display = 'none';
+          document.getElementById('paths-error').style.display = 'block';
+          document.getElementById('paths-error-msg').textContent = d.msg;
+          resetPathsBtn();
+        }
+      };
+      pathsES.onerror = () => { if (pathsES) { pathsES.close(); pathsES = null; } resetPathsBtn(); };
+    }
+
+    function resetPathsBtn() {
+      document.getElementById('paths-btn').disabled = false;
+      document.getElementById('paths-btn').textContent = 'Explore Paths';
+    }
+
+    function appendPathLog(msg) {
+      const log = document.getElementById('paths-log');
+      const line = document.createElement('div');
+      line.textContent = '› ' + msg;
+      log.appendChild(line);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function renderPaths(data) {
+      document.getElementById('paths-progress').style.display = 'none';
+      document.getElementById('paths-results').style.display = 'block';
+      resetPathsBtn();
+
+      const lang = data.lang || 'en';
+      const title = data.title || '';
+      const encoded = encodeURIComponent(title.replace(/ /g, '_'));
+      document.getElementById('result-title').textContent = title;
+      document.getElementById('result-link').href = `https://${lang}.wikipedia.org/wiki/${encoded}`;
+      document.getElementById('result-month').textContent = data.month || '';
+      document.getElementById('stat-incoming').textContent = fmtNum(data.total_incoming);
+      document.getElementById('stat-outgoing').textContent = fmtNum(data.total_outgoing);
+      document.getElementById('stat-external').textContent = fmtNum(data.total_external);
+
+      const maxIn  = Math.max(...(data.incoming || []).map(r => r.count), 1);
+      const maxOut = Math.max(...(data.outgoing || []).map(r => r.count), 1);
+      const maxExt = Math.max(...(data.external || []).map(r => r.count), 1);
+
+      document.getElementById('incoming-list').innerHTML = renderPathList(data.incoming || [], maxIn, lang, 'found');
+      document.getElementById('outgoing-list').innerHTML = renderPathList(data.outgoing || [], maxOut, lang, 'stub');
+      document.getElementById('external-list').innerHTML = renderExtList(data.external || [], maxExt);
+
+      if (!(data.external || []).length) {
+        document.getElementById('external-panel').style.display = 'none';
+      } else {
+        document.getElementById('external-panel').style.display = 'block';
+      }
+    }
+
+    function renderPathList(items, maxCount, lang, colorVar) {
+      if (!items.length) return '<p style="color:var(--text-muted);padding:0.75rem 1.5rem;font-size:13px;">No data</p>';
+      return items.map(item => {
+        const pct = Math.round((item.count / maxCount) * 100);
+        const encoded = encodeURIComponent(item.article.replace(/ /g, '_'));
+        return `
+          <div class="path-row" onclick="drillDown('${escJS(item.article)}')">
+            <div class="path-row-content">
+              <div class="path-title">${esc(item.article)}</div>
+              <div class="path-count">${fmtNum(item.count)}</div>
+            </div>
+            <div class="path-bar-track">
+              <div class="path-bar" style="width:${pct}%;background:var(--${colorVar});"></div>
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    function renderExtList(items, maxCount) {
+      if (!items.length) return '<p style="color:var(--text-muted);padding:0.75rem 1.5rem;font-size:13px;">No data</p>';
+      const labels = {
+        'other-search':   'Wikipedia search',
+        'other-external': 'External website / Google',
+        'other-empty':    'Direct link (no referrer)',
+        'other-internal': 'Wikipedia internal (non-article)',
+        'other-other':    'Other',
+      };
+      return items.map(item => {
+        const pct = Math.round((item.count / maxCount) * 100);
+        const label = labels[item.article] || item.article;
+        return `
+          <div class="path-row" style="cursor:default;">
+            <div class="path-row-content">
+              <div class="path-title">${esc(label)}</div>
+              <div class="path-count">${fmtNum(item.count)}</div>
+            </div>
+            <div class="path-bar-track">
+              <div class="path-bar" style="width:${pct}%;background:var(--warning-color);"></div>
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    function drillDown(article) {
+      document.getElementById('article-input').value = article;
+      document.getElementById('paths-results').style.display = 'none';
+      explorePaths();
+    }
+
+    // ── Bulk analysis ──────────────────────────────────────────────
+    let allRecords = [];
+    let currentLang = 'en';
+    let bulkES = null;
+
+    function runAnalysis() {
+      const langs = [];
+      if (document.getElementById('lang-en').checked) langs.push('en');
+      if (document.getElementById('lang-es').checked) langs.push('es');
+      if (!langs.length) return;
+
+      const noClickstream = document.getElementById('mode-select').value === 'fast';
+      const depth = document.getElementById('depth-select').value;
+      const top   = document.getElementById('top-select').value;
+
+      document.getElementById('bulk-progress').style.display = 'block';
+      document.getElementById('bulk-log').innerHTML = '';
+      document.getElementById('bulk-results').style.display = 'none';
+      document.getElementById('run-btn').disabled = true;
+      document.getElementById('run-btn').textContent = 'Running…';
+
+      if (bulkES) { bulkES.close(); bulkES = null; }
+
+      const params = new URLSearchParams({ lang: langs.join(','), no_clickstream: noClickstream, depth, top, cache_dir: '~/.cache/wiki-wc-nav' });
+      bulkES = new EventSource(`/api/analyze?${params}`);
+
+      bulkES.onmessage = (e) => {
+        const d = JSON.parse(e.data);
+        if (d.type === 'progress') {
+          const log = document.getElementById('bulk-log');
+          const line = document.createElement('div');
+          line.textContent = '› ' + d.msg;
+          log.appendChild(line);
+          log.scrollTop = log.scrollHeight;
+        } else if (d.type === 'done') {
+          bulkES.close(); bulkES = null;
+          setTimeout(() => showBulkResults(d.records, d.langs), 300);
+        } else if (d.type === 'error') {
+          bulkES.close(); bulkES = null;
+          document.getElementById('run-btn').disabled = false;
+          document.getElementById('run-btn').textContent = 'Analyze';
+        }
+      };
+      bulkES.onerror = () => {
+        if (bulkES) { bulkES.close(); bulkES = null; }
+        document.getElementById('run-btn').disabled = false;
+        document.getElementById('run-btn').textContent = 'Analyze';
+      };
+    }
+
+    function showBulkResults(records, langs) {
+      allRecords = records;
+      document.getElementById('bulk-progress').style.display = 'none';
+      document.getElementById('bulk-results').style.display = 'block';
+      document.getElementById('run-btn').disabled = false;
+      document.getElementById('run-btn').textContent = 'Analyze';
+
+      const stubs = records.filter(r => r.is_stub).length;
+      const noTrans = records.filter(r => !r.has_translation).length;
+      const maxViews = Math.max(...records.map(r => r.views_30d));
+      document.getElementById('bulk-stats').innerHTML = `
+        <div class="stat"><div class="stat-value">${records.length}</div><div class="stat-label">Articles</div></div>
+        <div class="stat"><div class="stat-value stub">${stubs}</div><div class="stat-label">Stubs</div></div>
+        <div class="stat"><div class="stat-value gap">${noTrans}</div><div class="stat-label">No translation</div></div>
+        <div class="stat"><div class="stat-value found">${fmtNum(maxViews)}</div><div class="stat-label">Peak views/30d</div></div>
+      `;
+
+      const tabContainer = document.getElementById('lang-tabs');
+      tabContainer.innerHTML = langs.map((l, i) =>
+        `<button class="tab ${i===0?'active':''}" onclick="switchLang('${l}',this)">${l.toUpperCase()}</button>`
+      ).join('');
+
+      currentLang = langs[0];
+      renderTable(currentLang);
+    }
+
+    function switchLang(lang, btn) {
+      document.querySelectorAll('#lang-tabs .tab').forEach(t => t.classList.remove('active'));
+      btn.classList.add('active');
+      currentLang = lang;
+      renderTable(lang);
+    }
+
+    function renderTable(lang) {
+      const top = parseInt(document.getElementById('top-select').value);
+      const rows = allRecords.filter(r => r.lang === lang).slice(0, top);
+      document.getElementById('table-head').innerHTML = `<tr>
+        <th style="width:36px;">#</th>
+        <th>Article</th>
+        <th style="text-align:right;">Views/30d</th>
+        <th style="text-align:right;">In-links</th>
+        <th style="text-align:right;">Out-links</th>
+        <th>Flags</th>
+        <th style="text-align:right;">Priority</th>
+      </tr>`;
+      document.getElementById('table-body').innerHTML = rows.map((r, i) => {
+        const flags = [
+          r.is_stub ? '<span class="badge stub">Stub</span>' : '',
+          r.no_refs ? '<span class="badge warning">No refs</span>' : '',
+          !r.has_image ? '<span class="badge warning">No image</span>' : '',
+          !r.has_translation ? '<span class="badge missing">No translation</span>' : '',
+        ].filter(Boolean).join(' ') || '<span style="color:var(--text-muted);">OK</span>';
+        const pri = r.priority_score;
+        const pc = pri >= 0.55 ? 'priority-high' : pri >= 0.35 ? 'priority-med' : 'priority-low';
+        return `<tr>
+          <td style="color:var(--text-muted);text-align:right;">${i+1}</td>
+          <td><a href="${esc(r.wiki_url)}" target="_blank" class="article-link">${esc(r.title)}</a></td>
+          <td style="text-align:right;">${fmtNum(r.views_30d)}</td>
+          <td style="text-align:right;">${fmtNum(r.in_link_n)}</td>
+          <td style="text-align:right;">${fmtNum(r.out_link_n)}</td>
+          <td>${flags}</td>
+          <td style="text-align:right;"><span class="priority-score ${pc}">${pri.toFixed(3)}</span></td>
+        </tr>`;
+      }).join('');
+    }
+
+    function exportCSV() {
+      if (!allRecords.length) return;
+      window.location.href = `/api/export-csv?data_json=${encodeURIComponent(JSON.stringify(allRecords))}`;
+    }
+
+    // ── Helpers ────────────────────────────────────────────────────
+    function fmtNum(n) {
+      if (!n) return '—';
+      if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+      if (n >= 1e3) return Math.round(n / 1e3) + 'K';
+      return n.toLocaleString();
+    }
+
+    function esc(s) {
+      const d = document.createElement('div');
+      d.textContent = String(s);
+      return d.innerHTML;
+    }
+
+    function escJS(s) {
+      return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    }
+  </script>
+</body>
+</html>
