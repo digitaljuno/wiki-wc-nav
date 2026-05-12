@@ -93,7 +93,7 @@ async def analyze(
                         return
 
                     yield evt("progress", msg="Parsing navigation data (EN takes 2–3 min — please wait)...")
-                    loop = asyncio.get_event_loop()
+                    loop = asyncio.get_running_loop()
                     parsed = await asyncio.gather(*[
                         loop.run_in_executor(
                             None, wn.parse_clickstream, path, article_map[l]["underscored"]
@@ -170,7 +170,7 @@ async def article_paths(
 
             # Scan (blocking — run in executor)
             yield evt("progress", msg=f"Scanning clickstream for '{title}' (may take 1–3 min for EN)...")
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(
                 None, wn.lookup_article_nav, path, title_underscored, limit
             )
